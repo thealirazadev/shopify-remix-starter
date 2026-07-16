@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 
+import db from "~/db.server";
 import { actionForTopic } from "~/lib/webhook-topics";
 import { authenticate } from "~/shopify.server";
 
@@ -12,6 +13,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     switch (actionForTopic(topic)) {
+      case "delete-sessions": {
+        await db.session.deleteMany({ where: { shop } });
+        console.warn(
+          JSON.stringify({
+            level: "info",
+            msg: "deleted sessions after uninstall",
+            shop,
+            topic,
+          }),
+        );
+        break;
+      }
+
       default: {
         console.warn(
           JSON.stringify({

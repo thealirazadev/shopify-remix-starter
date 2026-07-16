@@ -1,6 +1,11 @@
 import "./lib/env.server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
-import { ApiVersion, AppDistribution, shopifyApp } from "@shopify/shopify-app-remix/server";
+import {
+  ApiVersion,
+  AppDistribution,
+  DeliveryMethod,
+  shopifyApp,
+} from "@shopify/shopify-app-remix/server";
 
 import db from "./db.server";
 
@@ -15,6 +20,28 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(db),
   distribution: AppDistribution.AppStore,
+  webhooks: {
+    APP_UNINSTALLED: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks",
+    },
+  },
+  hooks: {
+    afterAuth: async ({ session }) => {
+      try {
+        await shopify.registerWebhooks({ session });
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            msg: "failed to register webhooks after auth",
+            shop: session.shop,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    },
+  },
   future: {
     unstable_newEmbeddedAuthStrategy: true,
   },
