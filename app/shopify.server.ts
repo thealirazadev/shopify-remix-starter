@@ -3,12 +3,20 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import {
   ApiVersion,
   AppDistribution,
+  BillingInterval,
   DeliveryMethod,
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
 
 import db from "./db.server";
 import { logger } from "./lib/logger.server";
+
+// Billing is config-toggleable so the starter installs without forcing a
+// charge; see app/lib/billing.server.ts. Flip to true to require the demo
+// plan on the gated demo route.
+export const BILLING_ENABLED = process.env.BILLING_ENABLED === "true";
+
+const DEMO_PLAN = "Demo Monthly";
 
 const shopify = shopifyApp({
   // assertRequiredEnv() (imported above) has already thrown at startup if any
@@ -21,6 +29,21 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(db),
   distribution: AppDistribution.AppStore,
+  // The plan is always declared so the config type is concrete; whether it
+  // is ever checked is controlled entirely by BILLING_ENABLED in
+  // app/lib/billing.server.ts, so the starter never forces a charge unless
+  // that flag is turned on.
+  billing: {
+    [DEMO_PLAN]: {
+      lineItems: [
+        {
+          amount: 5,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
+      ],
+    },
+  },
   webhooks: {
     APP_UNINSTALLED: {
       deliveryMethod: DeliveryMethod.Http,
@@ -59,6 +82,8 @@ const shopify = shopifyApp({
     unstable_newEmbeddedAuthStrategy: true,
   },
 });
+
+export const DEMO_BILLING_PLAN = DEMO_PLAN;
 
 export default shopify;
 export const apiVersion = ApiVersion.January25;
