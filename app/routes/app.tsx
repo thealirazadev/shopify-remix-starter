@@ -26,6 +26,7 @@ export default function AppLayout() {
           Home
         </Link>
         <Link to="/app/additional">Additional page</Link>
+        <Link to="/app/billing-demo">Billing demo</Link>
       </NavMenu>
       <Outlet />
     </AppProvider>
