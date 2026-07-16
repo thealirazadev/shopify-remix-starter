@@ -3,11 +3,15 @@ import { describe, expect, it } from "vitest";
 import { actionForTopic } from "./webhook-topics";
 
 describe("actionForTopic", () => {
-  it("maps app/uninstalled to session deletion", () => {
+  it("maps every registered compliance and lifecycle topic", () => {
     expect(actionForTopic("APP_UNINSTALLED")).toBe("delete-sessions");
+    expect(actionForTopic("APP_SCOPES_UPDATE")).toBe("update-scope");
+    expect(actionForTopic("CUSTOMERS_DATA_REQUEST")).toBe("acknowledge-data-request");
+    expect(actionForTopic("CUSTOMERS_REDACT")).toBe("acknowledge-customer-redact");
+    expect(actionForTopic("SHOP_REDACT")).toBe("delete-shop-data");
   });
 
-  it("falls back to unhandled for a topic not yet wired up", () => {
+  it("falls back to unhandled for an unknown topic", () => {
     expect(actionForTopic("ORDERS_CREATE")).toBe("unhandled");
   });
 });
