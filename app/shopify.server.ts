@@ -8,6 +8,7 @@ import {
 } from "@shopify/shopify-app-remix/server";
 
 import db from "./db.server";
+import { logger } from "./lib/logger.server";
 
 const shopify = shopifyApp({
   // assertRequiredEnv() (imported above) has already thrown at startup if any
@@ -47,14 +48,10 @@ const shopify = shopifyApp({
       try {
         await shopify.registerWebhooks({ session });
       } catch (error) {
-        console.error(
-          JSON.stringify({
-            level: "error",
-            msg: "failed to register webhooks after auth",
-            shop: session.shop,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
+        logger.error("failed to register webhooks after auth", {
+          shop: session.shop,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     },
   },

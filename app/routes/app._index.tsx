@@ -16,6 +16,8 @@ import {
 import { useState } from "react";
 
 import db from "~/db.server";
+import { apiError, newRequestId } from "~/lib/errors";
+import { logger } from "~/lib/logger.server";
 import { LABEL_MAX_LENGTH, validateLabel } from "~/lib/validate-label";
 import { authenticate } from "~/shopify.server";
 
@@ -46,6 +48,7 @@ interface ShopAndProductsResponse {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
+  const requestId = newRequestId();
 
   try {
     const response = await admin.graphql(SHOP_AND_PRODUCTS_QUERY, { variables: { first: 5 } });
@@ -61,11 +64,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       shopName: body.data.shop.name,
       products: body.data.products.edges.map((edge) => edge.node),
       label: setting?.label ?? "",
-      loadError: null as string | null,
+      error: null as null | { code: string; message: string; requestId: string },
     });
   } catch (error) {
-    console.error("failed to load shop and products", {
+    logger.error("failed to load shop and products", {
       shop: session.shop,
+      requestId,
       error: error instanceof Error ? error.message : String(error),
     });
 
@@ -73,13 +77,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       shopName: "",
       products: [],
       label: "",
-      loadError: "Could not load shop data. Try again.",
+      error: apiError("UPSTREAM_ERROR", "Could not load shop data. Try again.", requestId).error,
     });
   }
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const { session } = await authenticate.admin(request);
+  const requestId = newRequestId();
   const formData = await request.formData();
   const rawLabel = String(formData.get("label") ?? "");
   const label = rawLabel.trim();
@@ -98,8 +103,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
     return json({ ok: true as const, label });
   } catch (error) {
-    console.error("failed to save shop setting", {
+    logger.error("failed to save shop setting", {
       shop: session.shop,
+      requestId,
       error: error instanceof Error ? error.message : String(error),
     });
 
@@ -121,9 +127,9 @@ export default function Index() {
     <Page title="Sample admin page">
       <Layout>
         <Layout.Section>
-          {data.loadError ? (
+          {data.error ? (
             <Banner tone="critical" title="Could not load shop data">
-              <p>{data.loadError}</p>
+              <p>{data.error.message}</p>
             </Banner>
           ) : null}
 

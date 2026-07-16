@@ -6,6 +6,7 @@ import { RemixServer } from "@remix-run/react";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 
+import { logger } from "./lib/logger.server";
 import { addDocumentResponseHeaders } from "./shopify.server";
 
 export const streamTimeout = 5000;
@@ -47,7 +48,9 @@ export default async function handleRequest(
         },
         onError(error) {
           didError = true;
-          console.error(error);
+          logger.error("unhandled render error", {
+            error: error instanceof Error ? error.message : String(error),
+          });
         },
       },
     );
