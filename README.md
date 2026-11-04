@@ -34,7 +34,7 @@ A production-minded boilerplate for building embedded Shopify admin apps with Re
 1. Clone the repository and change into it.
 2. Copy the environment template: `cp .env.example .env`, then fill in real values (see `docs/architecture.md` for each variable).
 3. Install dependencies: `npm install`.
-4. Generate the Prisma client and apply migrations: `npx prisma migrate deploy`.
+4. Generate the Prisma client and apply migrations: `npx prisma generate && npx prisma migrate deploy`.
 
 ## Run (local development)
 
