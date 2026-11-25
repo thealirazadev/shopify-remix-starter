@@ -26,9 +26,11 @@ Declaring it conditionally made the package's generic types collapse, so the pla
 config and the decision lives in one place: `requireActiveSubscription` in
 `app/lib/billing.server.ts` returns immediately unless `BILLING_ENABLED` is `"true"`. When
 enabled it calls `billing.require` and redirects a shop without the plan to Shopify's managed
-confirmation page. The demo route `app.billing-demo.tsx` shows the pattern. Requests are made with
-`isTest: true`, so a real app must turn that off before charging merchants. The starter installs
-on any store without forcing a subscription.
+confirmation page. The demo route `app.billing-demo.tsx` shows the pattern. Whether a request is a
+test charge comes from `isTestBilling` in `app/lib/billing-mode.ts`: test unless `NODE_ENV` is
+`production`, with `BILLING_TEST=true` or `false` overriding either way. It used to be hard-coded
+to `isTest: true`, which meant a deployed app could never charge. The starter installs on any
+store without forcing a subscription.
 
 ## 4. One webhook endpoint with a pure dispatch table
 
@@ -38,8 +40,9 @@ without mocking Prisma or the authenticator. `app/uninstalled` deletes the shop'
 `app/scopes_update` writes the new scope list onto stored sessions, `shop/redact` deletes the
 shop's settings and sessions, and the customer compliance topics are acknowledged because the
 starter stores no customer data. Unknown topics are logged and acknowledged with a 200. A
-processing failure returns 500 so Shopify retries the delivery. Webhook registration after
-install is wrapped so a registration failure is logged rather than breaking the install.
+processing failure returns 500 so Shopify retries the delivery. Topics are subscribed once, in
+`shopify.app.toml`. The config used to also register them per shop in `afterAuth`, which could
+deliver each event twice, so that path was removed.
 
 ## 5. One error shape, and no stack traces for users
 

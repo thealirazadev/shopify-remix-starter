@@ -8,7 +8,7 @@ The end-to-end lifecycle of the app:
 2. **Session storage** — The session (shop domain, access token, scopes, expiry) is written to the database through the Prisma session storage adapter. Subsequent requests read this session to authenticate Admin API calls.
 3. **Embedded app** — After install, the app loads inside Shopify Admin as an embedded app. App Bridge frames it; Polaris provides the UI. Every embedded route authenticates the incoming request with `authenticate.admin(request)`, which validates the session token (JWT) issued by App Bridge.
 4. **Admin API** — Authenticated loaders and actions call the Admin GraphQL API using the session's access token to read and write shop data.
-5. **Webhooks** — Shopify sends webhooks (topic + HMAC-signed body) to the app's webhook route. The handler verifies the HMAC, then dispatches by topic. `app/uninstalled` triggers session cleanup. Compliance topics are handled for App Store eligibility.
+5. **Webhooks** — Topics are subscribed in `shopify.app.toml` (app-specific subscriptions, applied by `shopify app deploy`); nothing registers them again per shop after OAuth, so each event arrives once. Shopify sends webhooks (topic + HMAC-signed body) to the app's webhook route. The handler verifies the HMAC, then dispatches by topic. `app/uninstalled` triggers session cleanup. Compliance topics are handled for App Store eligibility.
 6. **Billing** — Gated routes check for an active subscription via the billing helper. Shops without one are sent to a managed confirmation URL; on approval Shopify redirects back and the check passes.
 
 ## Folder and file tree
@@ -22,18 +22,21 @@ shopify-remix-starter/
       _index/
         route.tsx               Landing/redirect route (non-embedded entry)
       app.tsx                   Embedded layout: authenticate.admin, Polaris frame, nav
-      app._index.tsx            Sample admin page (loader query + action mutation)
+      app._index.tsx            Sample admin page (products query, productUpdate, label save)
       app.additional.tsx        Second embedded route (demonstrates App Bridge nav)
       auth.$.tsx                OAuth begin/callback catch-all (shopify.authenticate)
       auth.login/
         route.tsx               Login form for non-embedded OAuth start
       webhooks.tsx              Single webhook endpoint: HMAC verify + topic dispatch
     shopify.server.ts           shopifyApp() config: API keys, scopes, session storage,
-                                webhook registration, billing config
+                                billing config (webhook subscriptions are in shopify.app.toml)
     db.server.ts                Prisma client singleton
     lib/
       logger.server.ts          Structured logger (JSON lines)
       errors.ts                 Shared error shape + helpers
+      product-title.ts          Title input parsing + productUpdate response mapping (pure)
+      billing-mode.ts           Test-charge decision from NODE_ENV / BILLING_TEST (pure)
+      billing.server.ts         requireActiveSubscription gate
   prisma/
     schema.prisma               Session model + ShopSetting example model
     migrations/                 Generated migrations (never hand-edited)
@@ -53,10 +56,10 @@ shopify-remix-starter/
 ## Tech stack with rationale
 
 - **Remix (Vite) + TypeScript** — Remix's loader/action model maps cleanly to Shopify's request-per-page auth. `@shopify/shopify-app-remix` is built for it. Vite gives fast dev and is the current Shopify template default. TypeScript catches integration mistakes early.
-- **@shopify/shopify-app-remix** — Official adapter. Handles OAuth, session token validation, webhook registration and verification, and billing. Avoids reimplementing security-critical code.
+- **@shopify/shopify-app-remix** — Official adapter. Handles OAuth, session token validation, webhook verification, and billing. Avoids reimplementing security-critical code.
 - **@shopify/polaris** — Shopify's design system. Using it keeps the app visually consistent with Admin and satisfies App Store review expectations. No custom theme.
 - **@shopify/app-bridge-react** — Required to run embedded: framing, navigation, resource pickers, and session token issuance.
-- **Prisma + SQLite/Postgres** — Prisma's session storage adapter is first-class in the Shopify Remix package. SQLite keeps local dev zero-setup; the same schema runs on Postgres/MySQL in production by swapping `DATABASE_URL`.
+- **Prisma + SQLite** — Prisma's session storage adapter is first-class in the Shopify Remix package. SQLite keeps local dev zero-setup. Prisma fixes the database provider in `prisma/schema.prisma` (`sqlite` here), so moving to PostgreSQL or MySQL means changing that provider and regenerating the migrations; changing `DATABASE_URL` alone does not switch engines.
 - **Shopify CLI** — Manages tunneling, environment injection, and `shopify.app.toml` sync during local dev, so contributors do not configure ngrok by hand.
 - **Node runtime** — Broad hosting support and the runtime the Shopify packages target.
 
@@ -107,7 +110,7 @@ model ShopSetting {
 - **Shopify Admin GraphQL API** — Primary data source for shop, products, and mutations.
 - **Shopify OAuth + billing endpoints** — Handled through `@shopify/shopify-app-remix`.
 - **Shopify CLI tunneling service** — Local development only.
-- **Database** — SQLite locally; a managed Postgres or MySQL instance in production.
+- **Database** — SQLite, through Prisma. See the provider note above before pointing it at another engine.
 
 ## Required environment variables
 
@@ -117,6 +120,8 @@ model ShopSetting {
 | `SHOPIFY_API_SECRET` | App Client Secret. Secret; used to verify HMAC and exchange OAuth codes. |
 | `SCOPES` | Comma-separated access scopes requested at install (for example `read_products,write_products`). |
 | `SHOPIFY_APP_URL` | Public HTTPS base URL of the app (tunnel URL in dev, real domain in prod). Used to build OAuth and webhook callback URLs. |
-| `DATABASE_URL` | Prisma connection string. SQLite file locally; Postgres/MySQL URL in production. |
+| `DATABASE_URL` | Prisma connection string for the SQLite file (for example `file:./dev.sqlite`). |
 
-All five are documented with dummy values in `.env.example`. The app must fail fast with a clear error at startup if any required variable is missing.
+Optional: `BILLING_ENABLED` (`true` to gate the billing demo route) and `BILLING_TEST` (`true` or `false` to override the test-charge default, which is test everywhere except `NODE_ENV=production`).
+
+The five required variables are documented with dummy values in `.env.example`, along with the two optional ones. The app must fail fast with a clear error at startup if any required variable is missing.
