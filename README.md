@@ -55,7 +55,7 @@ npm run test
 npm run build
 ```
 
-Build and tests must pass before a feature is considered done. See `docs/testing.md` for the full strategy and exact commands.
+CI runs the same checks on every push and pull request. See `docs/testing.md` for the full strategy and exact commands.
 
 ## Project structure
 
@@ -64,7 +64,7 @@ app/            Remix routes, entry points, and shared server/client modules
   routes/       OAuth, embedded pages, webhook, and billing routes
   shopify.server.ts   Shopify app config, session storage, webhook registration
 prisma/         Prisma schema and migrations
-docs/           PRD, architecture, rules, design, API contracts, phases, testing, memory, launch checklist
+docs/           architecture, design, API contracts, testing, design decisions (decisions.md)
 .env.example    Environment variable template
 ```
 
