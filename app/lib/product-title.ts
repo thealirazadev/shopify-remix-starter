@@ -6,8 +6,7 @@ export const PRODUCT_TITLE_MAX_LENGTH = 255;
 const PRODUCT_GID = /^gid:\/\/shopify\/Product\/\d+$/;
 
 export type ProductTitleInput =
-  | { ok: true; id: string; title: string }
-  | { ok: false; message: string };
+  { ok: true; id: string; title: string } | { ok: false; message: string };
 
 export function parseProductTitleInput(rawId: string, rawTitle: string): ProductTitleInput {
   const id = rawId.trim();
