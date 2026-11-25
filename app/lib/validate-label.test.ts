@@ -22,4 +22,8 @@ describe("validateLabel", () => {
   it("accepts a label at exactly the max length", () => {
     expect(validateLabel("a".repeat(LABEL_MAX_LENGTH)).valid).toBe(true);
   });
+
+  it("trims surrounding whitespace before checking the length", () => {
+    expect(validateLabel(`  ${"a".repeat(LABEL_MAX_LENGTH)}  `)).toEqual({ valid: true });
+  });
 });
