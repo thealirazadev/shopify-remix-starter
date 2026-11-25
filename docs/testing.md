@@ -7,7 +7,7 @@ The starter favors a small, reliable set of automated checks plus disciplined ma
 ### Automated
 - **Type checking** — `tsc` catches integration mistakes at the boundary with the Shopify and Prisma types. Treated as a required gate.
 - **Lint** — ESLint with the Shopify config enforces conventions and catches common React/Remix mistakes.
-- **Unit tests**: Vitest for pure functions: label validation (`validate-label.test.ts`), the error-formatting helper (`errors.test.ts`), and the webhook topic dispatch mapping (`webhook-topics.test.ts`). Mock Prisma and the Shopify `admin` client at the boundary; do not hit the network.
+- **Unit tests**: Vitest for pure functions: label validation (`validate-label.test.ts`), product title input and `productUpdate` response mapping (`product-title.test.ts`), the test-charge decision (`billing-mode.test.ts`), the error-formatting helper (`errors.test.ts`), and the webhook topic dispatch mapping (`webhook-topics.test.ts`). Mock Prisma and the Shopify `admin` client at the boundary; do not hit the network.
 - **Build** — `vite build` (via `remix vite:build`) must succeed; a broken build blocks the feature.
 
 ### Manual QA
@@ -15,7 +15,7 @@ The starter favors a small, reliable set of automated checks plus disciplined ma
 - Use `npx prisma studio` to inspect `Session` and `ShopSetting` rows.
 - Trigger webhooks with the Shopify CLI (`shopify app webhook trigger`) to exercise HMAC verification and topic handling, including `app/uninstalled`.
 - Always test the unhappy paths: wrong input, empty forms, no network, duplicate submit, refresh mid-action, empty states, long inputs.
-- Check install end to end: the OAuth round trip, embedded framing and NavMenu navigation, a `Session` row written, webhook deliveries (uninstall and the three compliance topics) returning 200 with the right cleanup, and the billing demo route with `BILLING_ENABLED=true` against a test charge.
+- Check install end to end: the OAuth round trip, embedded framing and NavMenu navigation, a `Session` row written, webhook deliveries (uninstall and the three compliance topics) returning 200 with the right cleanup, renaming a product from the sample page (and a `userErrors` path, such as a title Shopify rejects), and the billing demo route with `BILLING_ENABLED=true` against a test charge.
 
 ## Exact commands
 

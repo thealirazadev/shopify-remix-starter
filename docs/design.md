@@ -20,7 +20,7 @@ Shared shell for all embedded routes.
 ### Sample admin page (`app._index.tsx`)
 - `Page` with a title and an optional primary action.
 - `Layout` with `Layout.Section` regions.
-- `Card` containing shop data (for example shop name and a short product list rendered with `ResourceList` or `IndexTable`).
+- `Card` containing the shop name and the first five products, each as its own small form (`TextField` plus a "Save title" `Button`) that renames the product through `productUpdate`. A rejected title shows as the field error; a saved one shows "Saved to Shopify." as help text.
 - A form built from `FormLayout`, `TextField`, and `Button` to edit the example `ShopSetting.label`.
 - `Banner` for surfacing errors (tone `critical`) or success (tone `success`), or App Bridge `Toast` for transient success.
 - `Text` for headings and body copy, using Polaris typography variants.

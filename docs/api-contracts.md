@@ -45,7 +45,7 @@ Single endpoint for all webhook topics.
 - **Dispatch:** Switch on the verified `topic`. Unknown topics return `200` (acknowledged, no-op) and are logged at `warn`.
 - **Response:** Always `200` on success within the timeout; failures that should be retried return `500`.
 
-Registered topics:
+Topics, all subscribed in `shopify.app.toml` (nothing registers them per shop at install, so each event is delivered once):
 
 | Topic | Purpose | Handler action |
 | --- | --- | --- |
@@ -105,11 +105,23 @@ Body:
 ```
 - **Error:** GraphQL/DB failure returns `{ "error": { "code": "UPSTREAM_ERROR", "message": "Could not load shop data. Try again.", "requestId": "..." } }` and the page shows a `Banner`.
 
-**action** (form submit to update the example setting)
+**action** (two form intents, chosen by the `intent` field)
+
+`intent=saveLabel` (the default when `intent` is absent): update the example setting.
 - **Auth:** `authenticate.admin(request)`.
-- **Input:** `label` (string). Server-side validation: required, trimmed length 1–100. Invalid input returns `{ "error": { "code": "INVALID_INPUT", "message": "...", "requestId": "..." } }` and the field shows an error.
-- **Writes:** Upserts `ShopSetting` for the shop (Prisma). Optionally runs the `UpdateProductTitle` mutation to demonstrate an Admin write.
-- **Success:** Returns `{ "ok": true, "label": "..." }`; UI shows a success `Banner` or App Bridge `Toast`.
+- **Input:** `label` (string). Server-side validation: required, trimmed length 1 to 100.
+- **Writes:** Upserts `ShopSetting` for the shop (Prisma only; no Admin API call).
+- **Success:** `{ "ok": true, "intent": "saveLabel", "label": "..." }`; the page shows a success `Banner`.
+- **Failure:** `{ "ok": false, "intent": "saveLabel", "fieldError": "..." }` with `400` (invalid input) or `500` (database error); the field shows the message.
+
+`intent=renameProduct`: rename one of the listed products through the Admin API.
+- **Auth:** `authenticate.admin(request)`; needs the `write_products` scope.
+- **Input:** `productId` (a `gid://shopify/Product/<id>`) and `title` (trimmed, 1 to 255 characters), checked by `parseProductTitleInput` in `app/lib/product-title.ts`.
+- **Writes:** Runs the `UpdateProductTitle` mutation below.
+- **Success:** `{ "ok": true, "intent": "renameProduct", "product": { "id": "...", "title": "..." } }`; the row shows "Saved to Shopify." and the loader revalidates.
+- **Failure:** `{ "ok": false, "intent": "renameProduct", "fieldError": "..." }` with `400` for invalid input or a `userErrors` entry (its first message is shown), or `502` when the Admin API call fails. The full `userErrors` array and any GraphQL errors are logged with the request id.
+
+The form actions return a field-level `fieldError` rather than the `{ "error": ... }` envelope, because each message belongs to one form field.
 
 ### `app.additional.tsx`
 - **loader:** `authenticate.admin(request)` only; returns static/demo content. Demonstrates App Bridge navigation.
@@ -136,10 +148,10 @@ query ShopAndProducts($first: Int!) {
 ```
 Variables: `{ "first": 5 }`.
 
-### Mutation: `UpdateProductTitle` (action write, optional demo)
+### Mutation: `UpdateProductTitle` (action write, `intent=renameProduct`)
 ```graphql
-mutation UpdateProductTitle($input: ProductInput!) {
-  productUpdate(input: $input) {
+mutation UpdateProductTitle($product: ProductUpdateInput!) {
+  productUpdate(product: $product) {
     product {
       id
       title
@@ -151,10 +163,11 @@ mutation UpdateProductTitle($input: ProductInput!) {
   }
 }
 ```
-Variables: `{ "input": { "id": "gid://shopify/Product/1", "title": "New title" } }`.
-- Always inspect `userErrors`. A non-empty `userErrors` array is mapped to the consistent error format with `code: "INVALID_INPUT"` and the first message surfaced to the user; full array logged.
+Variables: `{ "product": { "id": "gid://shopify/Product/1", "title": "New title" } }`.
+- Always inspect `userErrors`. A non-empty `userErrors` array is treated as `INVALID_INPUT` and its first message is surfaced to the user; the full array is logged.
 
 ## Billing (gated routes)
 - Gated routes call the billing helper (`billing.require` / `billing.check`) after `authenticate.admin`.
 - A shop without an active subscription is redirected to Shopify's managed confirmation URL. On approval Shopify redirects back and the check passes.
 - Billing is config-toggleable so the starter installs without forcing a charge. Which routes are gated is stated in code comments and here; by default none are hard-gated in the starter (the scaffold shows the pattern on a demo route).
+- Billing requests are test charges unless `NODE_ENV=production`; `BILLING_TEST=true` or `false` decides explicitly (`app/lib/billing-mode.ts`).

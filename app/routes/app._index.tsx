@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useFetcher, useLoaderData, useNavigation } from "@remix-run/react";
 import {
   Banner,
   BlockStack,
@@ -18,6 +18,12 @@ import { useState } from "react";
 import db from "~/db.server";
 import { apiError, newRequestId } from "~/lib/errors";
 import { logger } from "~/lib/logger.server";
+import type { UpdateProductTitleResponse } from "~/lib/product-title";
+import {
+  PRODUCT_TITLE_MAX_LENGTH,
+  parseProductTitleInput,
+  productTitleOutcome,
+} from "~/lib/product-title";
 import { LABEL_MAX_LENGTH, validateLabel } from "~/lib/validate-label";
 import { authenticate } from "~/shopify.server";
 
@@ -38,6 +44,24 @@ const SHOP_AND_PRODUCTS_QUERY = `#graphql
     }
   }
 `;
+
+// The Admin write the sample page demonstrates. Needs the write_products scope.
+const UPDATE_PRODUCT_TITLE_MUTATION = `#graphql
+  mutation UpdateProductTitle($product: ProductUpdateInput!) {
+    productUpdate(product: $product) {
+      product {
+        id
+        title
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+type AdminContext = Awaited<ReturnType<typeof authenticate.admin>>;
 
 interface ShopAndProductsResponse {
   data?: {
@@ -82,16 +106,80 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 }
 
+async function renameProduct(context: AdminContext, formData: FormData, requestId: string) {
+  const { admin, session } = context;
+  const input = parseProductTitleInput(
+    String(formData.get("productId") ?? ""),
+    String(formData.get("title") ?? ""),
+  );
+
+  if (!input.ok) {
+    return json(
+      { ok: false as const, intent: "renameProduct" as const, fieldError: input.message },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const response = await admin.graphql(UPDATE_PRODUCT_TITLE_MUTATION, {
+      variables: { product: { id: input.id, title: input.title } },
+    });
+    const body = (await response.json()) as UpdateProductTitleResponse;
+    const outcome = productTitleOutcome(body);
+
+    if (!outcome.ok) {
+      logger.error("product title update rejected", {
+        shop: session.shop,
+        requestId,
+        code: outcome.code,
+        userErrors: body.data?.productUpdate?.userErrors ?? [],
+        errors: body.errors ?? [],
+      });
+
+      return json(
+        { ok: false as const, intent: "renameProduct" as const, fieldError: outcome.message },
+        { status: outcome.code === "INVALID_INPUT" ? 400 : 502 },
+      );
+    }
+
+    return json({ ok: true as const, intent: "renameProduct" as const, product: outcome.product });
+  } catch (error) {
+    logger.error("failed to update product title", {
+      shop: session.shop,
+      requestId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return json(
+      {
+        ok: false as const,
+        intent: "renameProduct" as const,
+        fieldError: "Could not update the product. Try again.",
+      },
+      { status: 502 },
+    );
+  }
+}
+
 export async function action({ request }: ActionFunctionArgs) {
-  const { session } = await authenticate.admin(request);
+  const context = await authenticate.admin(request);
+  const { session } = context;
   const requestId = newRequestId();
   const formData = await request.formData();
+
+  if (formData.get("intent") === "renameProduct") {
+    return renameProduct(context, formData, requestId);
+  }
+
   const rawLabel = String(formData.get("label") ?? "");
   const label = rawLabel.trim();
   const validation = validateLabel(rawLabel);
 
   if (!validation.valid) {
-    return json({ ok: false as const, fieldError: validation.message }, { status: 400 });
+    return json(
+      { ok: false as const, intent: "saveLabel" as const, fieldError: validation.message },
+      { status: 400 },
+    );
   }
 
   try {
@@ -101,7 +189,7 @@ export async function action({ request }: ActionFunctionArgs) {
       create: { shop: session.shop, label },
     });
 
-    return json({ ok: true as const, label });
+    return json({ ok: true as const, intent: "saveLabel" as const, label });
   } catch (error) {
     logger.error("failed to save shop setting", {
       shop: session.shop,
@@ -110,15 +198,55 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     return json(
-      { ok: false as const, fieldError: "Could not save the label. Try again." },
+      {
+        ok: false as const,
+        intent: "saveLabel" as const,
+        fieldError: "Could not save the label. Try again.",
+      },
       { status: 500 },
     );
   }
 }
 
+/**
+ * One product's title with its own fetcher, so saving a title neither touches
+ * the label form's state nor navigates. Remix revalidates the loader after the
+ * write, so the list shows what Shopify stored.
+ */
+function ProductTitleForm({ product }: { product: { id: string; title: string; status: string } }) {
+  const fetcher = useFetcher<typeof action>();
+  const [title, setTitle] = useState(product.title);
+  const response = fetcher.data;
+  const result = response?.intent === "renameProduct" ? response : null;
+  const saving = fetcher.state !== "idle";
+
+  return (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value="renameProduct" />
+      <input type="hidden" name="productId" value={product.id} />
+      <FormLayout>
+        <TextField
+          label={`Product title (${product.status})`}
+          name="title"
+          autoComplete="off"
+          value={title}
+          onChange={setTitle}
+          maxLength={PRODUCT_TITLE_MAX_LENGTH}
+          error={result && !result.ok ? result.fieldError : undefined}
+          helpText={result && result.ok ? "Saved to Shopify." : undefined}
+        />
+        <Button submit loading={saving} disabled={saving}>
+          Save title
+        </Button>
+      </FormLayout>
+    </fetcher.Form>
+  );
+}
+
 export default function Index() {
   const data = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
+  const rawActionData = useActionData<typeof action>();
+  const actionData = rawActionData?.intent === "saveLabel" ? rawActionData : undefined;
   const navigation = useNavigation();
   const [label, setLabel] = useState(data.label);
   const isSubmitting = navigation.state === "submitting";
@@ -159,11 +287,9 @@ export default function Index() {
                   <p>Products created in this shop will show up here.</p>
                 </EmptyState>
               ) : (
-                <BlockStack gap="200">
+                <BlockStack gap="400">
                   {data.products.map((product) => (
-                    <Text as="p" key={product.id}>
-                      {product.title} ({product.status})
-                    </Text>
+                    <ProductTitleForm key={product.id} product={product} />
                   ))}
                 </BlockStack>
               )}
